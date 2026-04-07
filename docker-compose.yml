@@ -1,0 +1,31 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: polls-postgres
+    environment:
+      POSTGRES_DB: polls
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d polls"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build: .
+    container_name: polls-app
+    environment:
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@postgres:5432/polls
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+
+volumes:
+  postgres_data:

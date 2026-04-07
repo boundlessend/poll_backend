@@ -1,0 +1,153 @@
+from __future__ import annotations
+
+from datetime import datetime, timedelta, timezone
+from typing import Optional
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+
+class PollCreateRequest(BaseModel):
+    """запрос на создание опроса"""
+
+    question: str = Field(min_length=1)
+    options: list[str]
+    close_after_seconds: Optional[int] = Field(default=None, ge=1)
+
+    @field_validator("question")
+    @classmethod
+    def validate_question(cls, value: str) -> str:
+        """проверяет вопрос"""
+
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("Вопрос не может быть пустым")
+        return cleaned
+
+    @field_validator("options")
+    @classmethod
+    def validate_options(cls, value: list[str]) -> list[str]:
+        """проверяет варианты ответа"""
+
+        cleaned_options = [option.strip() for option in value]
+        if len(cleaned_options) < 2:
+            raise ValueError("Должно быть минимум 2 варианта ответа")
+        if len(cleaned_options) > 5:
+            raise ValueError("Должно быть максимум 5 вариантов ответа")
+        if any(not option for option in cleaned_options):
+            raise ValueError("Варианты ответа не могут быть пустыми")
+        return cleaned_options
+
+
+class PollVoteRequest(BaseModel):
+    """запрос на голосование"""
+
+    voter_id: str = Field(min_length=1, max_length=255)
+    option_id: int = Field(gt=0)
+
+    @field_validator("voter_id")
+    @classmethod
+    def validate_voter_id(cls, value: str) -> str:
+        """проверяет идентификатор голосующего"""
+
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("Поле voter_id не может быть пустым")
+        return cleaned
+
+
+class PollOptionResponse(BaseModel):
+    """вариант ответа"""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    text: str
+
+
+class PollCreatedResponse(BaseModel):
+    """ответ на создание опроса"""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    question: str
+    status: str
+    closes_at: Optional[datetime]
+    options: list[PollOptionResponse]
+
+
+class PollListItemResponse(BaseModel):
+    """элемент списка опросов"""
+
+    id: int
+    question: str
+    status: str
+    options_count: int
+    total_votes: int
+    closes_at: Optional[datetime]
+    created_at: datetime
+
+
+class PollListResponse(BaseModel):
+    """список опросов"""
+
+    items: list[PollListItemResponse]
+
+
+class VoteCreatedResponse(BaseModel):
+    """ответ на успешное голосование"""
+
+    poll_id: int
+    option_id: int
+    voter_id: str
+    status: str
+
+
+class PollResultOptionResponse(BaseModel):
+    """вариант ответа с количеством голосов"""
+
+    id: int
+    text: str
+    votes_count: int
+
+
+class PollResultsResponse(BaseModel):
+    """результаты опроса"""
+
+    id: int
+    question: str
+    status: str
+    total_votes: int
+    closes_at: Optional[datetime]
+    options: list[PollResultOptionResponse]
+
+
+class PollClosedResponse(BaseModel):
+    """ответ на закрытие опроса"""
+
+    id: int
+    status: str
+    closed_at: datetime
+
+
+class PollCreateInternal(BaseModel):
+    """внутренняя модель создания опроса"""
+
+    question: str
+    options: list[str]
+    closes_at: Optional[datetime]
+
+    @classmethod
+    def from_request(cls, request: PollCreateRequest) -> "PollCreateInternal":
+        """строит внутреннюю модель из запроса"""
+
+        closes_at = None
+        if request.close_after_seconds is not None:
+            closes_at = datetime.now(timezone.utc) + timedelta(
+                seconds=request.close_after_seconds
+            )
+        return cls(
+            question=request.question,
+            options=request.options,
+            closes_at=closes_at,
+        )
