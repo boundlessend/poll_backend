@@ -3,13 +3,14 @@ from __future__ import annotations
 from time import sleep
 
 
-def create_poll(client, close_after_seconds=None):
+def create_poll(client, close_after_seconds=None, **overrides):
     payload = {
         "question": "Какой язык выбрать?",
         "options": ["Python", "Go"],
     }
     if close_after_seconds is not None:
         payload["close_after_seconds"] = close_after_seconds
+    payload.update(overrides)
     response = client.post("/api/v1/polls", json=payload)
     return response
 
@@ -25,14 +26,25 @@ def test_create_poll_success(client):
 
 
 def test_create_poll_with_empty_question_returns_validation_error(client):
-    response = client.post(
-        "/api/v1/polls",
-        json={"question": "   ", "options": ["Python", "Go"]},
-    )
+    response = create_poll(client, question="   ")
 
     assert response.status_code == 422
     data = response.json()
     assert data["error"]["code"] == "validation_error"
+
+
+def test_create_poll_with_less_than_two_options_returns_validation_error(client):
+    response = create_poll(client, options=["Python"])
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "validation_error"
+
+
+def test_create_poll_with_empty_option_returns_validation_error(client):
+    response = create_poll(client, options=["Python", "   "])
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "validation_error"
 
 
 def test_list_polls_returns_summary(client):

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from sqlalchemy import func, select
+from sqlalchemy import func, insert, literal, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
@@ -29,6 +29,19 @@ def get_poll_or_404(db: Session, poll_id: int) -> Poll:
         .where(Poll.id == poll_id)
         .options(selectinload(Poll.options))
     )
+    if poll is None:
+        raise NotFoundError(
+            code="poll_not_found",
+            message="Опрос не найден",
+            details={"poll_id": poll_id},
+        )
+    return poll
+
+
+def get_poll_for_update_or_404(db: Session, poll_id: int) -> Poll:
+    """возвращает опрос c блокировкой строки или ошибку 404"""
+
+    poll = db.scalar(select(Poll).where(Poll.id == poll_id).with_for_update())
     if poll is None:
         raise NotFoundError(
             code="poll_not_found",
@@ -98,7 +111,7 @@ def list_polls(db: Session) -> PollListResponse:
         .order_by(Poll.id.desc())
     )
 
-    now = datetime.now(timezone.utc)
+    now = _utcnow()
     items = []
     for row in rows:
         status = (
@@ -126,9 +139,11 @@ def vote(
 ) -> VoteCreatedResponse:
     """сохраняет голос за вариант"""
 
-    poll = get_poll_or_404(db, poll_id)
+    poll = get_poll_for_update_or_404(db, poll_id)
+    current_time = _utcnow()
 
-    if poll.status == "closed":
+    if _is_poll_closed(poll, current_time):
+        _persist_auto_close_if_needed(db, poll, current_time)
         raise ConflictError(
             code="poll_closed",
             message="Голосование в закрытом опросе запрещено",
@@ -147,11 +162,29 @@ def vote(
             details={"poll_id": poll_id, "option_id": option_id},
         )
 
-    vote_item = Vote(poll_id=poll_id, option_id=option_id, voter_id=voter_id)
-    db.add(vote_item)
+    insert_vote_stmt = (
+        insert(Vote)
+        .from_select(
+            [Vote.poll_id, Vote.option_id, Vote.voter_id],
+            select(
+                literal(poll_id),
+                literal(option_id),
+                literal(voter_id),
+            ).where(
+                select(Poll.id)
+                .where(
+                    Poll.id == poll_id,
+                    Poll.closed_at.is_(None),
+                    or_(Poll.closes_at.is_(None), Poll.closes_at > func.now()),
+                )
+                .exists()
+            ),
+        )
+        .returning(Vote.id)
+    )
 
     try:
-        db.commit()
+        vote_id = db.scalar(insert_vote_stmt)
     except IntegrityError:
         db.rollback()
         raise ConflictError(
@@ -159,6 +192,19 @@ def vote(
             message="Один участник не может голосовать дважды в одном опросе",
             details={"poll_id": poll_id, "voter_id": voter_id},
         ) from None
+
+    if vote_id is None:
+        db.rollback()
+        poll = get_poll_for_update_or_404(db, poll_id)
+        _persist_auto_close_if_needed(db, poll, _utcnow())
+        raise ConflictError(
+            code="poll_closed",
+            message="Голосование в закрытом опросе запрещено",
+            details={"poll_id": poll_id},
+        )
+
+    db.commit()
+    db.refresh(poll)
 
     return VoteCreatedResponse(
         poll_id=poll_id,
@@ -207,16 +253,18 @@ def get_results(db: Session, poll_id: int) -> PollResultsResponse:
 def close_poll(db: Session, poll_id: int) -> PollClosedResponse:
     """закрывает опрос вручную"""
 
-    poll = get_poll_or_404(db, poll_id)
+    poll = get_poll_for_update_or_404(db, poll_id)
+    current_time = _utcnow()
 
-    if poll.status == "closed":
+    if _is_poll_closed(poll, current_time):
+        _persist_auto_close_if_needed(db, poll, current_time)
         raise ConflictError(
             code="poll_already_closed",
             message="Опрос уже закрыт",
             details={"poll_id": poll_id},
         )
 
-    poll.closed_at = datetime.now(timezone.utc)
+    poll.closed_at = current_time
     db.commit()
     db.refresh(poll)
 
@@ -227,7 +275,38 @@ def close_poll(db: Session, poll_id: int) -> PollClosedResponse:
     )
 
 
-def _to_utc(value):
+def _is_poll_closed(poll: Poll, current_time: datetime) -> bool:
+    """проверяет, закрыт ли опрос на текущий момент"""
+
+    if poll.closed_at is not None:
+        return True
+    if poll.closes_at is not None and _to_utc(poll.closes_at) <= current_time:
+        return True
+    return False
+
+
+def _persist_auto_close_if_needed(
+    db: Session, poll: Poll, current_time: datetime
+) -> None:
+    """сохраняет auto-close в базе, если время истекло"""
+
+    if poll.closed_at is not None:
+        return
+    if poll.closes_at is None or _to_utc(poll.closes_at) > current_time:
+        return
+
+    poll.closed_at = current_time
+    db.commit()
+    db.refresh(poll)
+
+
+def _utcnow() -> datetime:
+    """возвращает текущее время в utc"""
+
+    return datetime.now(timezone.utc)
+
+
+def _to_utc(value: datetime) -> datetime:
     """нормализует дату к utc"""
 
     if value.tzinfo is None:
