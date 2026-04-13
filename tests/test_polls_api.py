@@ -3,6 +3,12 @@ from __future__ import annotations
 from time import sleep
 
 
+def auth_headers(user_id: str = "user-1") -> dict[str, str]:
+    """строит заголовки авторизации"""
+
+    return {"X-User-Id": user_id}
+
+
 def create_poll(client, close_after_seconds=None, **overrides):
     payload = {
         "question": "Какой язык выбрать?",
@@ -11,8 +17,7 @@ def create_poll(client, close_after_seconds=None, **overrides):
     if close_after_seconds is not None:
         payload["close_after_seconds"] = close_after_seconds
     payload.update(overrides)
-    response = client.post("/api/v1/polls", json=payload)
-    return response
+    return client.post("/api/v1/polls", json=payload)
 
 
 def test_create_poll_success(client):
@@ -29,11 +34,12 @@ def test_create_poll_with_empty_question_returns_validation_error(client):
     response = create_poll(client, question="   ")
 
     assert response.status_code == 422
-    data = response.json()
-    assert data["error"]["code"] == "validation_error"
+    assert response.json()["error"]["code"] == "validation_error"
 
 
-def test_create_poll_with_less_than_two_options_returns_validation_error(client):
+def test_create_poll_with_less_than_two_options_returns_validation_error(
+    client,
+):
     response = create_poll(client, options=["Python"])
 
     assert response.status_code == 422
@@ -54,7 +60,8 @@ def test_list_polls_returns_summary(client):
 
     client.post(
         f"/api/v1/polls/{poll['id']}/votes",
-        json={"voter_id": "user-1", "option_id": option_id},
+        json={"option_id": option_id},
+        headers=auth_headers(),
     )
 
     response = client.get("/api/v1/polls")
@@ -68,6 +75,35 @@ def test_list_polls_returns_summary(client):
     assert data["items"][0]["status"] == "open"
 
 
+def test_vote_requires_user_header(client):
+    poll_response = create_poll(client)
+    poll = poll_response.json()
+    option_id = poll["options"][0]["id"]
+
+    response = client.post(
+        f"/api/v1/polls/{poll['id']}/votes",
+        json={"option_id": option_id},
+    )
+
+    assert response.status_code == 401
+    assert response.json()["error"]["code"] == "authentication_required"
+
+
+def test_vote_with_empty_user_header_returns_401(client):
+    poll_response = create_poll(client)
+    poll = poll_response.json()
+    option_id = poll["options"][0]["id"]
+
+    response = client.post(
+        f"/api/v1/polls/{poll['id']}/votes",
+        json={"option_id": option_id},
+        headers=auth_headers("   "),
+    )
+
+    assert response.status_code == 401
+    assert response.json()["error"]["code"] == "authentication_required"
+
+
 def test_vote_success_and_results(client):
     poll_response = create_poll(client)
     poll = poll_response.json()
@@ -75,7 +111,8 @@ def test_vote_success_and_results(client):
 
     vote_response = client.post(
         f"/api/v1/polls/{poll['id']}/votes",
-        json={"voter_id": "user-1", "option_id": option_id},
+        json={"option_id": option_id},
+        headers=auth_headers(),
     )
 
     assert vote_response.status_code == 201
@@ -96,11 +133,13 @@ def test_duplicate_vote_returns_conflict(client):
 
     first_vote = client.post(
         f"/api/v1/polls/{poll['id']}/votes",
-        json={"voter_id": "user-1", "option_id": option_id},
+        json={"option_id": option_id},
+        headers=auth_headers(),
     )
     second_vote = client.post(
         f"/api/v1/polls/{poll['id']}/votes",
-        json={"voter_id": "user-1", "option_id": option_id},
+        json={"option_id": option_id},
+        headers=auth_headers(),
     )
 
     assert first_vote.status_code == 201
@@ -114,7 +153,8 @@ def test_vote_for_nonexistent_option_returns_not_found(client):
 
     response = client.post(
         f"/api/v1/polls/{poll['id']}/votes",
-        json={"voter_id": "user-1", "option_id": 99999},
+        json={"option_id": 99999},
+        headers=auth_headers(),
     )
 
     assert response.status_code == 404
@@ -129,7 +169,8 @@ def test_manual_close_blocks_new_votes(client):
     close_response = client.post(f"/api/v1/polls/{poll['id']}/close")
     vote_response = client.post(
         f"/api/v1/polls/{poll['id']}/votes",
-        json={"voter_id": "user-1", "option_id": option_id},
+        json={"option_id": option_id},
+        headers=auth_headers(),
     )
 
     assert close_response.status_code == 200
@@ -147,7 +188,8 @@ def test_auto_close_blocks_new_votes(client):
 
     vote_response = client.post(
         f"/api/v1/polls/{poll['id']}/votes",
-        json={"voter_id": "user-1", "option_id": option_id},
+        json={"option_id": option_id},
+        headers=auth_headers(),
     )
     results_response = client.get(f"/api/v1/polls/{poll['id']}/results")
 

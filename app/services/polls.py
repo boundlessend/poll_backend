@@ -52,7 +52,8 @@ def get_poll_for_update_or_404(db: Session, poll_id: int) -> Poll:
 
 
 def create_poll(
-    db: Session, payload: PollCreateInternal
+    db: Session,
+    payload: PollCreateInternal,
 ) -> PollCreatedResponse:
     """создает новый опрос"""
 
@@ -114,17 +115,15 @@ def list_polls(db: Session) -> PollListResponse:
     now = _utcnow()
     items = []
     for row in rows:
-        status = (
-            "closed"
-            if row.closed_at is not None
-            or (row.closes_at is not None and _to_utc(row.closes_at) <= now)
-            else "open"
-        )
         items.append(
             PollListItemResponse(
                 id=row.id,
                 question=row.question,
-                status=status,
+                status=_build_poll_status(
+                    closes_at=row.closes_at,
+                    closed_at=row.closed_at,
+                    current_time=now,
+                ),
                 options_count=row.options_count,
                 total_votes=row.total_votes,
                 closes_at=row.closes_at,
@@ -135,7 +134,10 @@ def list_polls(db: Session) -> PollListResponse:
 
 
 def vote(
-    db: Session, poll_id: int, option_id: int, voter_id: str
+    db: Session,
+    poll_id: int,
+    option_id: int,
+    user_id: str,
 ) -> VoteCreatedResponse:
     """сохраняет голос за вариант"""
 
@@ -152,7 +154,8 @@ def vote(
 
     option = db.scalar(
         select(PollOption).where(
-            PollOption.id == option_id, PollOption.poll_id == poll_id
+            PollOption.id == option_id,
+            PollOption.poll_id == poll_id,
         )
     )
     if option is None:
@@ -165,11 +168,11 @@ def vote(
     insert_vote_stmt = (
         insert(Vote)
         .from_select(
-            [Vote.poll_id, Vote.option_id, Vote.voter_id],
+            [Vote.poll_id, Vote.option_id, Vote.user_id],
             select(
                 literal(poll_id),
                 literal(option_id),
-                literal(voter_id),
+                literal(user_id),
             ).where(
                 select(Poll.id)
                 .where(
@@ -189,8 +192,8 @@ def vote(
         db.rollback()
         raise ConflictError(
             code="duplicate_vote",
-            message="Один участник не может голосовать дважды в одном опросе",
-            details={"poll_id": poll_id, "voter_id": voter_id},
+            message="Один пользователь не может голосовать дважды в одном опросе",
+            details={"poll_id": poll_id, "user_id": user_id},
         ) from None
 
     if vote_id is None:
@@ -209,7 +212,6 @@ def vote(
     return VoteCreatedResponse(
         poll_id=poll_id,
         option_id=option_id,
-        voter_id=voter_id,
         status=poll.status,
     )
 
@@ -233,18 +235,18 @@ def get_results(db: Session, poll_id: int) -> PollResultsResponse:
 
     options = [
         PollResultOptionResponse(
-            id=row.id, text=row.text, votes_count=row.votes_count
+            id=row.id,
+            text=row.text,
+            votes_count=row.votes_count,
         )
         for row in rows
     ]
-
-    total_votes = sum(option.votes_count for option in options)
 
     return PollResultsResponse(
         id=poll.id,
         question=poll.question,
         status=poll.status,
-        total_votes=total_votes,
+        total_votes=sum(option.votes_count for option in options),
         closes_at=poll.closes_at,
         options=options,
     )
@@ -278,17 +280,33 @@ def close_poll(db: Session, poll_id: int) -> PollClosedResponse:
 def _is_poll_closed(poll: Poll, current_time: datetime) -> bool:
     """проверяет, закрыт ли опрос на текущий момент"""
 
-    if poll.closed_at is not None:
-        return True
-    if poll.closes_at is not None and _to_utc(poll.closes_at) <= current_time:
-        return True
-    return False
+    return _build_poll_status(
+        closes_at=poll.closes_at,
+        closed_at=poll.closed_at,
+        current_time=current_time,
+    ) == "closed"
+
+
+def _build_poll_status(
+    closes_at: datetime | None,
+    closed_at: datetime | None,
+    current_time: datetime,
+) -> str:
+    """возвращает статус опроса по датам"""
+
+    if closed_at is not None:
+        return "closed"
+    if closes_at is not None and _to_utc(closes_at) <= current_time:
+        return "closed"
+    return "open"
 
 
 def _persist_auto_close_if_needed(
-    db: Session, poll: Poll, current_time: datetime
+    db: Session,
+    poll: Poll,
+    current_time: datetime,
 ) -> None:
-    """сохраняет auto-close в базе, если время истекло"""
+    """сохраняет auto close в базе если время истекло"""
 
     if poll.closed_at is not None:
         return

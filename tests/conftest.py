@@ -14,7 +14,6 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
-
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 TEST_DATABASE_ADMIN_URL = os.getenv(
     "TEST_DATABASE_ADMIN_URL",
@@ -25,8 +24,10 @@ TEST_DATABASE_ADMIN_URL = os.getenv(
 def _build_test_database_url(admin_url: str, db_name: str) -> str:
     """строит url временной тестовой базы из admin url"""
 
-    return make_url(admin_url).set(database=db_name).render_as_string(
-        hide_password=False
+    return (
+        make_url(admin_url)
+        .set(database=db_name)
+        .render_as_string(hide_password=False)
     )
 
 
@@ -71,14 +72,12 @@ def postgres_database() -> Generator[str, None, None]:
         )
         with cleanup_engine.connect() as connection:
             connection.execute(
-                text(
-                    """
+                text("""
                     SELECT pg_terminate_backend(pid)
                     FROM pg_stat_activity
                     WHERE datname = :db_name
                     AND pid <> pg_backend_pid()
-                    """
-                ),
+                    """),
                 {"db_name": db_name},
             )
             connection.execute(text(f'DROP DATABASE IF EXISTS "{db_name}"'))
@@ -118,7 +117,9 @@ def db_session(app_components) -> Generator[Session, None, None]:
 
 
 @pytest.fixture()
-def client(db_session: Session, app_components) -> Generator[TestClient, None, None]:
+def client(
+    db_session: Session, app_components
+) -> Generator[TestClient, None, None]:
     """создает тестовый http-клиент"""
 
     app, get_db, _, _ = app_components

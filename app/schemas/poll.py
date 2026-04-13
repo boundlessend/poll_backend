@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
-from typing import Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -11,7 +10,7 @@ class PollCreateRequest(BaseModel):
 
     question: str = Field(min_length=1)
     options: list[str]
-    close_after_seconds: Optional[int] = Field(default=None, ge=1)
+    close_after_seconds: int | None = Field(default=None, ge=1)
 
     @field_validator("question")
     @classmethod
@@ -41,18 +40,7 @@ class PollCreateRequest(BaseModel):
 class PollVoteRequest(BaseModel):
     """запрос на голосование"""
 
-    voter_id: str = Field(min_length=1, max_length=255)
     option_id: int = Field(gt=0)
-
-    @field_validator("voter_id")
-    @classmethod
-    def validate_voter_id(cls, value: str) -> str:
-        """проверяет идентификатор голосующего"""
-
-        cleaned = value.strip()
-        if not cleaned:
-            raise ValueError("Поле voter_id не может быть пустым")
-        return cleaned
 
 
 class PollOptionResponse(BaseModel):
@@ -72,7 +60,7 @@ class PollCreatedResponse(BaseModel):
     id: int
     question: str
     status: str
-    closes_at: Optional[datetime]
+    closes_at: datetime | None
     options: list[PollOptionResponse]
 
 
@@ -84,7 +72,7 @@ class PollListItemResponse(BaseModel):
     status: str
     options_count: int
     total_votes: int
-    closes_at: Optional[datetime]
+    closes_at: datetime | None
     created_at: datetime
 
 
@@ -99,7 +87,6 @@ class VoteCreatedResponse(BaseModel):
 
     poll_id: int
     option_id: int
-    voter_id: str
     status: str
 
 
@@ -118,7 +105,7 @@ class PollResultsResponse(BaseModel):
     question: str
     status: str
     total_votes: int
-    closes_at: Optional[datetime]
+    closes_at: datetime | None
     options: list[PollResultOptionResponse]
 
 
@@ -135,7 +122,7 @@ class PollCreateInternal(BaseModel):
 
     question: str
     options: list[str]
-    closes_at: Optional[datetime]
+    closes_at: datetime | None
 
     @classmethod
     def from_request(cls, request: PollCreateRequest) -> "PollCreateInternal":

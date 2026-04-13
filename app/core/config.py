@@ -5,7 +5,7 @@ from pydantic_settings import BaseSettings
 class Settings(BaseSettings):
     """настройки приложения"""
 
-    app_name: str = "Сервис опросов"
+    app_name: str = "сервис опросов"
     api_v1_prefix: str = "/api/v1"
     database_url: str = (
         "postgresql+psycopg://postgres:postgres@localhost:5432/polls"

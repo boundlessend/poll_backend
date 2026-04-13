@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Optional
 
 from sqlalchemy import (
     DateTime,
@@ -29,11 +28,13 @@ class Poll(Base):
         nullable=False,
         server_default=func.now(),
     )
-    closes_at: Mapped[Optional[datetime]] = mapped_column(
-        DateTime(timezone=True), nullable=True
+    closes_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
     )
-    closed_at: Mapped[Optional[datetime]] = mapped_column(
-        DateTime(timezone=True), nullable=True
+    closed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
     )
 
     options: Mapped[list["PollOption"]] = relationship(
@@ -75,7 +76,8 @@ class PollOption(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     poll_id: Mapped[int] = mapped_column(
-        ForeignKey("polls.id", ondelete="CASCADE"), nullable=False
+        ForeignKey("polls.id", ondelete="CASCADE"),
+        nullable=False,
     )
     text: Mapped[str] = mapped_column(Text, nullable=False)
 
@@ -84,21 +86,23 @@ class PollOption(Base):
 
 
 class Vote(Base):
-    """голос участника"""
+    """голос пользователя"""
 
     __tablename__ = "votes"
     __table_args__ = (
-        UniqueConstraint("poll_id", "voter_id", name="uq_votes_poll_voter"),
+        UniqueConstraint("poll_id", "user_id", name="uq_votes_poll_user"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     poll_id: Mapped[int] = mapped_column(
-        ForeignKey("polls.id", ondelete="CASCADE"), nullable=False
+        ForeignKey("polls.id", ondelete="CASCADE"),
+        nullable=False,
     )
     option_id: Mapped[int] = mapped_column(
-        ForeignKey("poll_options.id", ondelete="CASCADE"), nullable=False
+        ForeignKey("poll_options.id", ondelete="CASCADE"),
+        nullable=False,
     )
-    voter_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    user_id: Mapped[str] = mapped_column(String(255), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
