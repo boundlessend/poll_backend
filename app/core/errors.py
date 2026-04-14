@@ -6,6 +6,8 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
+from app.core.config import settings
+
 
 class AppError(Exception):
     """бизнес-ошибка приложения"""
@@ -96,6 +98,20 @@ def build_error_response(
     )
 
 
+def _is_missing_user_header_error(exc: RequestValidationError) -> bool:
+    """проверяет что ошибка связана с обязательным заголовком пользователя"""
+
+    expected_header = settings.user_id_header_name.lower()
+    for error in exc.errors():
+        location = [str(part).lower() for part in error.get("loc", ())]
+        if error.get("type") == "missing" and location == [
+            "header",
+            expected_header,
+        ]:
+            return True
+    return False
+
+
 def register_exception_handlers(app: FastAPI) -> None:
     """регистрирует обработчики ошибок"""
 
@@ -113,6 +129,14 @@ def register_exception_handlers(app: FastAPI) -> None:
         _: Request,
         exc: RequestValidationError,
     ) -> JSONResponse:
+        if _is_missing_user_header_error(exc):
+            return build_error_response(
+                401,
+                "authentication_required",
+                f"Для этого действия нужен заголовок {settings.user_id_header_name}",
+                {"header": settings.user_id_header_name},
+            )
+
         details = {
             "fields": [
                 {

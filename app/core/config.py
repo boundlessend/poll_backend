@@ -10,6 +10,8 @@ class Settings(BaseSettings):
     database_url: str = (
         "postgresql+psycopg://postgres:postgres@localhost:5432/polls"
     )
+    user_id_header_name: str = "X-User-Id"
+    timezone_name: str = "Europe/Moscow"
 
     model_config = ConfigDict(
         env_file=".env",

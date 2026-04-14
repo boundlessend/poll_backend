@@ -10,7 +10,6 @@ from typing import Sequence, Union
 import sqlalchemy as sa
 from alembic import op
 
-
 revision: str = "0001_create_polls_tables"
 down_revision: Union[str, Sequence[str], None] = None
 branch_labels: Union[str, Sequence[str], None] = None
@@ -18,9 +17,17 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
+    op.execute('CREATE EXTENSION IF NOT EXISTS "pgcrypto"')
+
     op.create_table(
         "polls",
-        sa.Column("id", sa.Integer(), primary_key=True),
+        sa.Column(
+            "id",
+            sa.UUID(),
+            primary_key=True,
+            nullable=False,
+            server_default=sa.text("gen_random_uuid()"),
+        ),
         sa.Column("question", sa.Text(), nullable=False),
         sa.Column(
             "created_at",
@@ -34,28 +41,46 @@ def upgrade() -> None:
 
     op.create_table(
         "poll_options",
-        sa.Column("id", sa.Integer(), primary_key=True),
+        sa.Column(
+            "id",
+            sa.UUID(),
+            primary_key=True,
+            nullable=False,
+            server_default=sa.text("gen_random_uuid()"),
+        ),
         sa.Column(
             "poll_id",
-            sa.Integer(),
+            sa.UUID(),
             sa.ForeignKey("polls.id", ondelete="CASCADE"),
             nullable=False,
         ),
+        sa.Column("option_id", sa.Integer(), nullable=False),
         sa.Column("text", sa.Text(), nullable=False),
+        sa.UniqueConstraint(
+            "poll_id",
+            "option_id",
+            name="uq_poll_options_poll_option",
+        ),
     )
 
     op.create_table(
         "votes",
-        sa.Column("id", sa.Integer(), primary_key=True),
+        sa.Column(
+            "id",
+            sa.UUID(),
+            primary_key=True,
+            nullable=False,
+            server_default=sa.text("gen_random_uuid()"),
+        ),
         sa.Column(
             "poll_id",
-            sa.Integer(),
+            sa.UUID(),
             sa.ForeignKey("polls.id", ondelete="CASCADE"),
             nullable=False,
         ),
         sa.Column(
-            "option_id",
-            sa.Integer(),
+            "poll_option_id",
+            sa.UUID(),
             sa.ForeignKey("poll_options.id", ondelete="CASCADE"),
             nullable=False,
         ),
@@ -70,14 +95,15 @@ def upgrade() -> None:
     )
 
     op.create_index("ix_votes_poll_id", "votes", ["poll_id"])
-    op.create_index("ix_votes_option_id", "votes", ["option_id"])
+    op.create_index("ix_votes_poll_option_id", "votes", ["poll_option_id"])
     op.create_index("ix_poll_options_poll_id", "poll_options", ["poll_id"])
 
 
 def downgrade() -> None:
     op.drop_index("ix_poll_options_poll_id", table_name="poll_options")
-    op.drop_index("ix_votes_option_id", table_name="votes")
+    op.drop_index("ix_votes_poll_option_id", table_name="votes")
     op.drop_index("ix_votes_poll_id", table_name="votes")
     op.drop_table("votes")
     op.drop_table("poll_options")
     op.drop_table("polls")
+    op.execute('DROP EXTENSION IF EXISTS "pgcrypto"')

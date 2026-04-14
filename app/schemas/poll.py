@@ -1,8 +1,11 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+from app.core.time import get_moscow_now
 
 
 class PollCreateRequest(BaseModel):
@@ -40,7 +43,7 @@ class PollCreateRequest(BaseModel):
 class PollVoteRequest(BaseModel):
     """запрос на голосование"""
 
-    option_id: int = Field(gt=0)
+    option_id: int = Field(ge=1)
 
 
 class PollOptionResponse(BaseModel):
@@ -48,7 +51,7 @@ class PollOptionResponse(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
-    id: int
+    option_id: int
     text: str
 
 
@@ -57,7 +60,7 @@ class PollCreatedResponse(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
-    id: int
+    id: UUID
     question: str
     status: str
     closes_at: datetime | None
@@ -67,7 +70,7 @@ class PollCreatedResponse(BaseModel):
 class PollListItemResponse(BaseModel):
     """элемент списка опросов"""
 
-    id: int
+    id: UUID
     question: str
     status: str
     options_count: int
@@ -85,7 +88,7 @@ class PollListResponse(BaseModel):
 class VoteCreatedResponse(BaseModel):
     """ответ на успешное голосование"""
 
-    poll_id: int
+    poll_id: UUID
     option_id: int
     status: str
 
@@ -93,7 +96,7 @@ class VoteCreatedResponse(BaseModel):
 class PollResultOptionResponse(BaseModel):
     """вариант ответа с количеством голосов"""
 
-    id: int
+    option_id: int
     text: str
     votes_count: int
 
@@ -101,7 +104,7 @@ class PollResultOptionResponse(BaseModel):
 class PollResultsResponse(BaseModel):
     """результаты опроса"""
 
-    id: int
+    id: UUID
     question: str
     status: str
     total_votes: int
@@ -112,7 +115,7 @@ class PollResultsResponse(BaseModel):
 class PollClosedResponse(BaseModel):
     """ответ на закрытие опроса"""
 
-    id: int
+    id: UUID
     status: str
     closed_at: datetime
 
@@ -130,7 +133,7 @@ class PollCreateInternal(BaseModel):
 
         closes_at = None
         if request.close_after_seconds is not None:
-            closes_at = datetime.now(timezone.utc) + timedelta(
+            closes_at = get_moscow_now() + timedelta(
                 seconds=request.close_after_seconds
             )
         return cls(

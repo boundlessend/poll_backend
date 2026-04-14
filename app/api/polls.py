@@ -1,3 +1,5 @@
+from uuid import UUID
+
 from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session
 
@@ -20,7 +22,6 @@ from app.services.polls import (
     list_polls,
     vote,
 )
-
 
 router = APIRouter(prefix="/polls", tags=["polls"])
 
@@ -52,7 +53,7 @@ def list_polls_view(db: Session = Depends(get_db)) -> PollListResponse:
     status_code=status.HTTP_201_CREATED,
 )
 def vote_view(
-    poll_id: int,
+    poll_id: UUID,
     payload: PollVoteRequest,
     db: Session = Depends(get_db),
     current_user_id: str = Depends(get_current_user_id),
@@ -69,7 +70,7 @@ def vote_view(
 
 @router.get("/{poll_id}/results", response_model=PollResultsResponse)
 def poll_results_view(
-    poll_id: int,
+    poll_id: UUID,
     db: Session = Depends(get_db),
 ) -> PollResultsResponse:
     """возвращает результаты опроса"""
@@ -79,7 +80,7 @@ def poll_results_view(
 
 @router.post("/{poll_id}/close", response_model=PollClosedResponse)
 def close_poll_view(
-    poll_id: int,
+    poll_id: UUID,
     db: Session = Depends(get_db),
 ) -> PollClosedResponse:
     """закрывает опрос"""
